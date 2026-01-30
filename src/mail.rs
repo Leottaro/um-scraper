@@ -31,7 +31,7 @@ impl MailManager {
             .as_ref()
             .unwrap_or(&config.gmail_login_email)
             .clone();
-        let mailbox = Mailbox::new(Some("Web scraper".to_string()), from_email.parse().unwrap());
+        let mailbox = Mailbox::new(Some("UM scraper".to_string()), from_email.parse().unwrap());
 
         Self { mailer, mailbox }
     }

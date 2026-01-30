@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde_derive::*;
 use std::{path::PathBuf, time::Duration};
 
-pub const CONFIG_PATH: &str = "./webscraper.yaml";
+pub const CONFIG_PATH: &str = "./umscraper.yaml";
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Config {

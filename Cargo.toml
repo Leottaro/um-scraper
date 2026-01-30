@@ -1,5 +1,5 @@
 [package]
-name = "web-scraper"
+name = "um-scraper"
 version = "0.1.0"
 edition = "2024"
 

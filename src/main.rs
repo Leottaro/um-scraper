@@ -4,10 +4,10 @@ use std::io::Write;
 use std::{error::Error, time::Duration};
 use thirtyfour::prelude::*;
 use tokio::process::Command;
-use web_scraper::config;
-use web_scraper::config::Config;
-use web_scraper::mail::MailManager;
-use web_scraper::note::Note;
+use um_scraper::config;
+use um_scraper::config::Config;
+use um_scraper::mail::MailManager;
+use um_scraper::note::Note;
 
 async fn ent_login(driver: &WebDriver, config: &config::Config) -> Result<(), Box<dyn Error>> {
     driver.goto("https://ent.umontpellier.fr").await?;
@@ -133,7 +133,7 @@ async fn main() {
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let mut caps = DesiredCapabilities::firefox();
-        // caps.set_headless().unwrap();
+        caps.set_headless().unwrap();
         let driver = WebDriver::new("http://localhost:4444", caps).await.unwrap();
 
         log::info!("Logging to ENT...");
