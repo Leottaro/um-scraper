@@ -15,6 +15,7 @@ pub struct Config {
     pub data_file: PathBuf,
     #[serde(with = "humantime_serde")]
     pub sleep_time: Duration,
+    pub geckodriver_port: u32,
 }
 
 impl Default for Config {
@@ -31,6 +32,7 @@ impl Default for Config {
             ],
             data_file: PathBuf::from("./notes.yaml"),
             sleep_time: durations::MINUTE * 10,
+            geckodriver_port: 4444,
         }
     }
 }

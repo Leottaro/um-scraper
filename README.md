@@ -26,6 +26,7 @@ to_emails:
 - ...
 data_file: ./notes.yaml
 sleep_time: 10m
+geckodriver_port: 4444
 ```
 
 ### Remplir les paramètres
@@ -42,6 +43,7 @@ sleep_time: 10m
 
 7. **sleep_time**: La durée entre chaque tentative de scraping. Vous pouvez spécifier la durée en secondes (s), minutes (m), ou heures (h).
     - Exemple : `sleep_time: "1h"` pour une heure, `sleep_time: "30m"` pour 30 minutes, ou `sleep_time: "45s"` pour 45 secondes.
+8. **geckodriver_port**: Le port sur lequel sera executé geckodriver.
 
 ### Exécution de l'application
 

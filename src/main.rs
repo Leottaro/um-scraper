@@ -14,12 +14,12 @@ async fn ent_login(driver: &WebDriver, config: &config::Config) -> Result<(), Bo
 
     let username_field = driver
         .query(By::Id("username"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .first()
         .await?;
     let password_field = driver
         .query(By::Id("password"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .first()
         .await?;
     username_field.send_keys(&config.ent_login_email).await?;
@@ -27,31 +27,32 @@ async fn ent_login(driver: &WebDriver, config: &config::Config) -> Result<(), Bo
 
     let login_button = driver
         .query(By::Css("[type=submit]"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .first()
         .await?;
     login_button.click().await?;
-    driver
-        .set_implicit_wait_timeout(Duration::from_secs(10))
-        .await?;
+
     Ok(())
 }
 
-async fn fetch_notes(driver: &WebDriver) -> Result<Vec<Note>, Box<dyn Error>> {
+async fn fetch_notes(
+    driver: &WebDriver,
+    config: &config::Config,
+) -> Result<Vec<Note>, Box<dyn Error>> {
     driver
         .goto("https://app.umontpellier.fr/mdw/#!notesView")
         .await?;
 
     let semester_table = driver
         .query(By::ClassName("v-table-body-noselection"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .all_from_selector()
         .await?[1]
         .clone();
 
     let last_semester_link = semester_table
         .query(By::ClassName("v-table-cell-content"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .all_from_selector()
         .await?[1]
         .clone();
@@ -61,7 +62,7 @@ async fn fetch_notes(driver: &WebDriver) -> Result<Vec<Note>, Box<dyn Error>> {
 
     let notes_table = driver
         .query(By::ClassName("v-table-table"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .all_from_selector()
         .await?
         .last()
@@ -70,7 +71,7 @@ async fn fetch_notes(driver: &WebDriver) -> Result<Vec<Note>, Box<dyn Error>> {
 
     let notes_row = notes_table
         .query(By::Tag("tr"))
-        .wait(Duration::from_secs(10), Duration::from_millis(500))
+        .wait(config.sleep_time, Duration::from_secs(1))
         .all_from_selector()
         .await?;
 
@@ -125,7 +126,10 @@ async fn main() {
 
     loop {
         log::info!("Spawning geckodriver...");
+
         let mut geckodriver = Command::new("geckodriver")
+            .arg("--port")
+            .arg(config.geckodriver_port.to_string())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
@@ -134,13 +138,18 @@ async fn main() {
 
         let mut caps = DesiredCapabilities::firefox();
         caps.set_headless().unwrap();
-        let driver = WebDriver::new("http://localhost:4444", caps).await.unwrap();
+        let driver = WebDriver::new(
+            &format!("http://localhost:{}", config.geckodriver_port),
+            caps,
+        )
+        .await
+        .unwrap();
 
         log::info!("Logging to ENT...");
         ent_login(&driver, &config).await.unwrap();
 
         log::info!("Fetching notes...");
-        let res = fetch_notes(&driver).await;
+        let res = fetch_notes(&driver, &config).await;
 
         log::info!("Killing geckodriver...");
         driver.quit().await.unwrap();
