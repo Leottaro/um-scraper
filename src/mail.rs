@@ -57,7 +57,7 @@ impl MailManager {
             let message = Message::builder()
                 .from(self.mailbox.clone())
                 .to(Mailbox::new(None, to_email.clone()))
-                .subject("HDD changed")
+                .subject("UM grades changed !")
                 .header(ContentType::TEXT_PLAIN)
                 .body(body.clone())
                 .unwrap();

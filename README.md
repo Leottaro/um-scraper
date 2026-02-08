@@ -7,7 +7,7 @@ UMscraper est un programme Rust qui récupère vos notes du dernier semestre de 
 ### Prérequis
 
 -   [Rust](https://rust-lang.org/tools/install/)
--   Geckodriver (installable via [Rust](https://crates.io/crates/geckodriver))
+-   [Geckodriver](https://github.com/mozilla/geckodriver#installation)
 -   Un compte Gmail (désolé Alban)
 
 ### Paramètres:

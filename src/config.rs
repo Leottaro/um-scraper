@@ -15,7 +15,7 @@ pub struct Config {
     pub data_file: PathBuf,
     #[serde(with = "humantime_serde")]
     pub sleep_time: Duration,
-    pub geckodriver_port: u32,
+    pub geckodriver_port: u16,
 }
 
 impl Default for Config {
@@ -30,7 +30,7 @@ impl Default for Config {
                 "mail1@gmail.com".to_string(),
                 "mail2@hotmail.com".to_string(),
             ],
-            data_file: PathBuf::from("./notes.yaml"),
+            data_file: PathBuf::from("./grades.yaml"),
             sleep_time: durations::MINUTE * 10,
             geckodriver_port: 4444,
         }

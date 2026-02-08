@@ -2,12 +2,13 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::{error::Error, time::Duration};
-use thirtyfour::prelude::*;
+use thirtyfour::{FirefoxCapabilities, prelude::*};
 use tokio::process::Command;
+use tokio::signal;
 use um_scraper::config;
 use um_scraper::config::Config;
+use um_scraper::grade::Grade;
 use um_scraper::mail::MailManager;
-use um_scraper::note::Note;
 
 async fn ent_login(driver: &WebDriver, config: &config::Config) -> Result<(), Box<dyn Error>> {
     driver.goto("https://ent.umontpellier.fr").await?;
@@ -35,10 +36,10 @@ async fn ent_login(driver: &WebDriver, config: &config::Config) -> Result<(), Bo
     Ok(())
 }
 
-async fn fetch_notes(
+async fn fetch_grades(
     driver: &WebDriver,
     config: &config::Config,
-) -> Result<Vec<Note>, Box<dyn Error>> {
+) -> Result<Vec<Grade>, Box<dyn Error>> {
     driver
         .goto("https://app.umontpellier.fr/mdw/#!notesView")
         .await?;
@@ -60,7 +61,7 @@ async fn fetch_notes(
 
     tokio::time::sleep(Duration::from_secs(10)).await;
 
-    let notes_table = driver
+    let grades_table = driver
         .query(By::ClassName("v-table-table"))
         .wait(config.sleep_time, Duration::from_secs(1))
         .all_from_selector()
@@ -69,20 +70,74 @@ async fn fetch_notes(
         .unwrap()
         .clone();
 
-    let notes_row = notes_table
+    let grades_row = grades_table
         .query(By::Tag("tr"))
         .wait(config.sleep_time, Duration::from_secs(1))
         .all_from_selector()
         .await?;
 
-    let mut notes = Vec::new();
-    for note_row in notes_row.into_iter().skip(2) {
-        if let Ok(note) = Note::from_row(note_row).await {
-            notes.push(note);
+    let mut grades = Vec::new();
+    for grade_row in grades_row.into_iter().skip(2) {
+        if let Ok(grade) = Grade::from_row(grade_row).await {
+            grades.push(grade);
         }
     }
 
-    Ok(notes)
+    Ok(grades)
+}
+
+struct RunArgs<'a> {
+    capabilities: FirefoxCapabilities,
+    last_grades: &'a mut Vec<Grade>,
+    last_grades_set: &'a mut HashSet<Grade>,
+}
+
+async fn run<'a>(args: &mut RunArgs<'a>) -> Result<(), Box<dyn Error>> {
+    log::info!("Refreshing config...");
+    let config = Config::load();
+    let mail_manager = MailManager::new(&config);
+
+    let driver = WebDriver::new(
+        &format!("http://localhost:{}", config.geckodriver_port),
+        args.capabilities.clone(),
+    )
+    .await?;
+
+    log::info!("Logging to ENT...");
+    ent_login(&driver, &config).await?;
+
+    log::info!("Fetching grades...");
+    let fetched_grades = fetch_grades(&driver, &config).await;
+
+    log::info!("Killing geckodriver...");
+    driver.quit().await?;
+    let fetched_grades = fetched_grades?;
+
+    let fetched_grades_set = fetched_grades.iter().cloned().collect::<HashSet<_>>();
+    if fetched_grades_set.eq(args.last_grades_set) {
+        log::info!("Data didn't changed...");
+    } else {
+        log::info!("Data changed !");
+
+        log::info!("Sending mail...");
+        mail_manager
+            .send_objects(
+                &config.to_emails,
+                &fetched_grades
+                    .iter()
+                    .filter(|grade| !args.last_grades_set.contains(grade))
+                    .collect(),
+            )
+            .expect("Failed to send mails");
+
+        log::info!("Writing new data to file...");
+        fs::write(config.data_file, serde_yaml::to_string(&fetched_grades)?)?;
+    }
+
+    *args.last_grades = fetched_grades.clone();
+    *args.last_grades_set = args.last_grades.iter().cloned().collect::<HashSet<_>>();
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -113,87 +168,55 @@ async fn main() {
         })
         .init();
 
-    let mut config = Config::load();
-    let mut mail_manager = MailManager::new(&config);
-
+    let config = Config::load();
     log::info!("Reading file data...");
-    let mut last_notes: Vec<Note> = std::fs::File::open(&config.data_file)
+    let mut last_grades: Vec<Grade> = std::fs::File::open(&config.data_file)
         .map(serde_yaml::from_reader)
         .unwrap_or(Ok(Vec::new()))
         .unwrap_or_default();
-    let mut last_notes_set = last_notes.iter().cloned().collect::<HashSet<_>>();
-    log::info!("last_notes: {last_notes:?}");
+    let mut last_grades_set = last_grades.iter().cloned().collect::<HashSet<_>>();
+    log::info!("last_grades: {last_grades:?}");
 
-    loop {
-        log::info!("Spawning geckodriver...");
-
-        let mut geckodriver = Command::new("geckodriver")
-            .arg("--port")
-            .arg(config.geckodriver_port.to_string())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
-        let mut caps = DesiredCapabilities::firefox();
-        caps.set_headless().unwrap();
-        let driver = WebDriver::new(
-            &format!("http://localhost:{}", config.geckodriver_port),
-            caps,
-        )
-        .await
+    log::info!("Spawning geckodriver...");
+    let mut geckodiver = Command::new("geckodriver")
+        .arg("--port")
+        .arg(config.geckodriver_port.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .unwrap();
+    let _ = tokio::spawn(async move {
+        let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).unwrap();
+        let mut sigint = signal::unix::signal(signal::unix::SignalKind::interrupt()).unwrap();
 
-        log::info!("Logging to ENT...");
-        ent_login(&driver, &config).await.unwrap();
-
-        log::info!("Fetching notes...");
-        let res = fetch_notes(&driver, &config).await;
-
-        log::info!("Killing geckodriver...");
-        driver.quit().await.unwrap();
-        geckodriver.kill().await.unwrap();
-        let fetched_notes = match res {
-            Ok(notes) => notes,
-            Err(_) => continue,
-        };
-
-        let fetched_notes_set = fetched_notes.iter().cloned().collect::<HashSet<_>>();
-        if last_notes_set.eq(&fetched_notes_set) {
-            log::info!("Data didn't changed...");
-        } else {
-            log::info!("Data changed !");
-
-            log::info!("Sending mail...");
-            mail_manager
-                .send_objects(
-                    &config.to_emails,
-                    &fetched_notes
-                        .iter()
-                        .filter(|note| !last_notes_set.contains(note))
-                        .collect(),
-                )
-                .expect("Failed to send mails");
-
-            log::info!("Writing new data to file...");
-            fs::write(
-                config.data_file,
-                serde_yaml::to_string(&fetched_notes).unwrap(),
-            )
-            .unwrap();
+        tokio::select! {
+            _ = sigterm.recv() => log::info!("Received SIGTERM"),
+            _ = sigint.recv() => log::info!("Received SIGINT"),
         }
 
+        geckodiver.kill().await.unwrap();
+        std::process::exit(0);
+    });
+
+    let mut capabilities = DesiredCapabilities::firefox();
+    capabilities.set_headless().unwrap();
+
+    let mut args = RunArgs {
+        capabilities,
+        last_grades: &mut last_grades,
+        last_grades_set: &mut last_grades_set,
+    };
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    loop {
+        match run(&mut args).await {
+            Ok(()) => (),
+            Err(e) => log::error!("Runtime error: {e}"),
+        }
         log::info!(
             "Waiting {}...",
             humantime::format_duration(config.sleep_time).to_string()
         );
-        last_notes = fetched_notes.clone();
-        last_notes_set = last_notes.iter().cloned().collect::<HashSet<_>>();
         tokio::time::sleep(config.sleep_time).await;
-
-        log::info!("Refreshing config...");
-        config = Config::load();
-        mail_manager = MailManager::new(&config);
     }
 }

@@ -1,3 +1,3 @@
 pub mod config;
+pub mod grade;
 pub mod mail;
-pub mod note;
